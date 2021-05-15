@@ -2973,3 +2973,7 @@ function Altro.discrete_jacobian_MC!(::Type{Q}, Dexp, model::FloatingSpace,
     # G .= Dgmtx*attiG
     mul!(Dexp.G, model.Dgmtx, model.attiG)
 end
+
+function TO.error_expansion!(D::Vector{<:TO.DynamicsExpansionMC}, model::FloatingSpace, G)
+    # do nothing for floatingBaseSpace model 
+end

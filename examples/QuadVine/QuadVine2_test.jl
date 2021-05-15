@@ -90,3 +90,12 @@ display(plot(hcat(Vector.(Vec.(ilqr.d[1:end]))...)',legend=false))
 
 U = controls(ilqr)
 display(plot(hcat(Vector.(U)...)',xlabel="timestep",ylabel="controls"))
+
+# timing -----------------------
+
+using STATProfilerHTML
+[f_vel(model, x0, x0, u0, rand(model.p), dt) for i=1:300]
+@profilehtml [f_vel(model, x0, x0, u0, rand(model.p), dt) for i=1:300]
+F = zeros(n+model.p,n+model.p)
+[fc_jacobian!(F, model, x⁺, x, u, λ, dt) for i=1:300]
+@profilehtml [fc_jacobian!(F, model, x⁺, x, u, λ, dt) for i=1:300]

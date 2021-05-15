@@ -7,8 +7,12 @@ model = FloatingSpaceOrth(3)
 # run test to trigger model function compile
 test_dyn()
 
+x0 = generate_config(model, [0.01;0.01;0.01;0.01], fill.(0.01,model.nb))
+
+xf = generate_config(model, [0.3;0.3;1.0;pi/6], fill.(pi/6,model.nb))
+
 # put solve steps in function 
-function solve_altro_test(model)
+function solve_altro_test(model, x0, xf)
        # trajectory 
        N = 100   
        dt = 0.005                  # number of knot points
@@ -18,9 +22,6 @@ function solve_altro_test(model)
        U0 = @SVector fill(0.00001, m)
        U_list = [U0 for k = 1:N-1]
    
-       x0 = generate_config(model, [0.01;0.01;0.01;0.01], fill.(0.01,model.nb))
-   
-       xf = generate_config(model, [0.3;0.3;1.0;pi/6], fill.(pi/6,model.nb))
    
        # objective
        Qf = Diagonal(@SVector fill(550., n))
@@ -43,19 +44,24 @@ function solve_altro_test(model)
            static_bp=0, 
            square_root = true,
            iterations=150, bp_reg=true,
+           constraint_force_reg = 1e-4,
+           dJ_counter_limit = 1,
+           iterations_inner = 30,
            cost_tolerance=1e-4, constraint_tolerance=1e-4)
        altro = ALTROSolver(prob, opts)
        set_options!(altro, show_summary=true)
        solve!(altro);
-       aa = 1;
        return altro
 end
 
-altro = solve_altro_test(model)
+altro = solve_altro_test(model, x0, xf)
 
 
 X_list = states(altro)
 
+N = 100   
+dt = 0.005        
+n,m = size(model)
 mech = vis_mech_generation(model)
 steps = Base.OneTo(Int(N))
 storage = CD.Storage{Float64}(steps,length(mech.bodies))

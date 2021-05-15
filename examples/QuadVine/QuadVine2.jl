@@ -117,8 +117,8 @@ function max_constraints_jacobian(model::QuadVine{R}, x) where R
     P = Lie_P(model)
     l = model.lengths
     d = zeros(T, 3)
-    rot = RD.rot_states(RD.LieState(UnitQuaternion{T}, Lie_P(model)), x)
-    # rot = RD.rot_states(model.liestate, x)
+    # rot = RD.rot_states(RD.LieState(UnitQuaternion{T}, Lie_P(model)), x) # use this if using ForwardDiff
+    rot = RD.rot_states(model.liestate, x) # use this if not using ForwardDiff
     J = zeros(T, nc, nv)
     for i=1:nb-1
         # shift vals

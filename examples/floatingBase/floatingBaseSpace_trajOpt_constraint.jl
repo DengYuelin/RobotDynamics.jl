@@ -1,87 +1,79 @@
 include("floatingBaseSpace.jl")
+include("floatingBaseSpace_test.jl")
 using Profile
 using TimerOutputs
 model = FloatingSpaceOrth(3)
-n,m = size(model)
+
+# run test to trigger model function compile
+test_dyn()
+
 x0 = generate_config(model, [0.01;0.01;0.01;0.01], fill.(0.01,model.nb))
 
 xf = generate_config(model, [0.3;0.3;1.0;pi/6], fill.(pi/6,model.nb))
 
-# TODO run these functions to use them to trigger compile 
-n,m = size(model)
-n̄ = state_diff_size(model)
-@show n
-@show n̄
-x0 = generate_config_with_rand_vel(model, [2.0;2.0;1.0;pi/4], fill.(pi/4,model.nb))
+# put solve steps in function 
+function solve_altro_test(model, x0, xf)
+    # trajectory 
+    N = 100   
+    dt = 0.01                 # number of knot points
+    tf = (N-1)*dt           # final time
 
-U = 0.01*rand(6+model.nb)
-dt = 0.001;
-λ_init = zeros(5*model.nb)
-λ = λ_init
-x = x0
-@time x1, λ = discrete_dynamics(model,x, U, λ, dt)
-@time fdyn(model,x1, x, U, λ, dt)
-# println(norm(fdyn(model,x1, x, u, λ, dt)))
-x = x0;
-for i=1:5
-    println("step: ",i)
-    @time x1, λ = discrete_dynamics(model,x, U, λ, dt)
-    println(norm(fdyn(model,x1, x, U, λ, dt)))
-    println(norm(g(model,x1)))
-    x = x1
+    U0 = @SVector fill(0.00001, m)
+    U_list = [U0 for k = 1:N-1]
+
+    x0 = generate_config(model, [0.01;0.01;0.01;0.01], fill.(0.01,model.nb))
+
+    xf = generate_config(model, [0.3;0.3;1.0;pi/6], fill.(pi/6,model.nb))
+
+    # objective
+    Qf = Diagonal(@SVector fill(550., n))
+    Q = Diagonal(@SVector fill(1e-2, n))
+    R = Diagonal(@SVector fill(1e-3, m))
+    costfuns = [TO.LieLQRCost(RD.LieState(model), Q, R, SVector{n}(xf); w=1e-1) for i=1:N]
+    costfuns[end] = TO.LieLQRCost(RD.LieState(model), Qf, R, SVector{n}(xf); w=550.0)
+    obj = Objective(costfuns);
+
+    # constraints
+    # Create Empty ConstraintList
+    conSet = ConstraintList(n,m,N)
+
+    #  limit the velocity of the last link 
+    # index of the last link
+    vmax = 2.5
+    statea_inds!(model, model.nb+1)
+    p = 3
+    A = zeros(p,n+m)
+    A[:,model.v_ainds] = I(3)
+    b = zeros(p)
+    b .= vmax
+    b2 = zeros(p)
+    b2 .= -vmax
+
+    lin_lower = LinearConstraint(n,m,A,b, Inequality())
+    lin_upper = LinearConstraint(n,m,-A,-b2, Inequality())
+
+    add_constraint!(conSet, lin_lower, 1:N-1)
+    add_constraint!(conSet, lin_upper, 1:N-1)
+
+    to = TimerOutput()
+    # # problem
+    prob = Problem(model, obj, xf, tf, x0=x0, constraints=conSet);
+
+    initial_controls!(prob, U_list)
+    opts = SolverOptions(verbose=7, 
+        static_bp=0, 
+        square_root = true,
+        iterations=150, bp_reg=true,
+        dJ_counter_limit = 1,
+        iterations_inner = 30,
+        cost_tolerance=1e-4, constraint_tolerance=1e-4)
+    altro = ALTROSolver(prob, opts)
+    set_options!(altro, show_summary=true)
+    solve!(altro);
+    aa = 1;;
+    return altro
 end
-
-# trajectory 
-N = 100   
-dt = 0.005                  # number of knot points
-tf = (N-1)*dt           # final time
-
-U0 = @SVector fill(0.00001, m)
-U_list = [U0 for k = 1:N-1]
-
-x0 = generate_config(model, [0.01;0.01;0.01;0.01], fill.(0.01,model.nb))
-
-xf = generate_config(model, [0.3;0.3;1.0;pi/6], fill.(pi/6,model.nb))
-
-# objective
-Qf = Diagonal(@SVector fill(550., n))
-Q = Diagonal(@SVector fill(1e-2, n))
-R = Diagonal(@SVector fill(1e-3, m))
-costfuns = [TO.LieLQRCost(RD.LieState(model), Q, R, SVector{n}(xf); w=1e-1) for i=1:N]
-costfuns[end] = TO.LieLQRCost(RD.LieState(model), Qf, R, SVector{n}(xf); w=550.0)
-obj = Objective(costfuns);
-
-# constraints
-# Create Empty ConstraintList
-conSet = ConstraintList(n,m,N)
-
-#  limit the velocity of the last link 
-# index of the last link
-vmax = 8.0
-statea_inds!(model, model.nb+1)
-p = 3
-A = zeros(p,n+m)
-A[:,model.v_ainds] = I(3)
-b = zeros(p)
-b .= vmax
-b2 = zeros(p)
-b2 .= -vmax
-
-lin_lower = LinearConstraint(n,m,A,b, Inequality())
-lin_upper = LinearConstraint(n,m,-A,-b2, Inequality())
-
-add_constraint!(conSet, lin_lower, 1:N)
-add_constraint!(conSet, lin_upper, 1:N)
-
-const to = TimerOutput()
-# # problem
-prob = Problem(model, obj, xf, tf, x0=x0, constraints=conSet);
-
-initial_controls!(prob, U_list)
-opts = SolverOptions(verbose=7, static_bp=0, iterations=150, cost_tolerance=1e-4, constraint_tolerance=1e-4)
-altro = ALTROSolver(prob, opts)
-set_options!(altro, show_summary=true)
-solve!(altro);
+altro = solve_altro_test(model, x0, xf)
 
 X_list = states(altro)
 U_list = controls(altro)
